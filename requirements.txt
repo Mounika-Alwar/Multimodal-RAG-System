@@ -19,3 +19,4 @@ Pillow
 pdfplumber
 PyMuPDF
 python-dotenv
+langchain_core.pydantic_v1
