@@ -4,12 +4,12 @@ python-multipart
 pydantic
 python-dotenv
 
-langchain==0.2.16
-langchain-core==0.2.35
-langchain-community==0.2.7
+langchain
+langchain-core
+langchain-community
 langchain-huggingface
 langchain-text-splitters
-langchain-google-genai==1.0.7
+langchain-google-genai
 
 faiss-cpu
 sentence-transformers
