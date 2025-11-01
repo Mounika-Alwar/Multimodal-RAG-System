@@ -1,252 +1,144 @@
 import os
 import base64
-import torch
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
-from langchain_community.vectorstores import FAISS
-from langchain_community.llms import HuggingFacePipeline
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
 from dotenv import load_dotenv
-from upload_pipeline import embed_text
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
+# ------------------------------------------------------
 # Load environment variables
+# ------------------------------------------------------
 load_dotenv()
+GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# -------------------------------
-# Embedding Wrapper
-# -------------------------------
-class CLIPTextEmbeddings:
-    def embed_query(self, text):
-        return embed_text(text)
-    def embed_documents(self, texts):
-        return [embed_text(t) for t in texts]
-    def __call__(self, text):
-        return embed_text(text)
+if not GOOGLE_API_KEY:
+    raise ValueError("❌ Please set GEMINI_API_KEY in your .env file")
 
-clip_embedder = CLIPTextEmbeddings()
+# ------------------------------------------------------
+# Initialize Gemini Embeddings
+# ------------------------------------------------------
+print("🚀 Initializing Gemini Embeddings...")
+embedding_model = GoogleGenerativeAIEmbeddings(
+    model="models/embedding-001",
+    google_api_key=GOOGLE_API_KEY
+)
+print("✅ Gemini Embeddings ready!\n")
 
-# -------------------------------
+# ------------------------------------------------------
 # Load Vector Store
-# -------------------------------
+# ------------------------------------------------------
 VECTOR_STORE_PATH = "vector_store"
+
 if not os.path.exists(VECTOR_STORE_PATH):
-    raise ValueError("❌ Vector store not found. Please run upload_pipeline.py first!")
+    raise ValueError("❌ Vector store not found! Please run upload_pipeline.py first to build it.")
 
 print("📦 Loading FAISS vector store...")
-vector_store = FAISS.load_local(VECTOR_STORE_PATH, embeddings=clip_embedder, allow_dangerous_deserialization=True)
+vector_store = FAISS.load_local(
+    VECTOR_STORE_PATH,
+    embeddings=embedding_model,
+    allow_dangerous_deserialization=True
+)
 print("✅ Vector store loaded successfully!\n")
 
-# -------------------------------
-# Choose Model
-# -------------------------------
-print("🤖 Choose the model you wish to use:")
-print("1️⃣  TinyLlama (for text-based Q&A)")
-print("2️⃣  Gemini 1.5 Flash (for multimodal queries)")
+# ------------------------------------------------------
+# Initialize Gemini LLM
+# ------------------------------------------------------
+print("🚀 Loading Gemini 2.5 Flash (multimodal)...")
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash",
+    temperature=0.6,
+    max_output_tokens=512,
+    google_api_key=GOOGLE_API_KEY
+)
+print("✅ Gemini LLM ready!\n")
 
-choice = input("Enter model number: ").strip()
-
-# -------------------------------
-# Model 1: TinyLlama
-# -------------------------------
-if choice == "1":
-    print("\n🚀 Loading TinyLlama model...")
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
-
-    pipe = pipeline(
-        "text-generation",
-        model=model,
-        tokenizer=tokenizer,
-        device=0 if device == "cuda" else -1,
-        max_new_tokens=300,
-        temperature=0.7,
-    )
-    llm = HuggingFacePipeline(pipeline=pipe)
-    print("✅ TinyLlama loaded successfully!\n")
-
-# -------------------------------
-# Model 2: Gemini (Multimodal)
-# -------------------------------
-elif choice == "2":
-    print("\n🚀 Loading Gemini 2.5 Flash (multimodal)...")
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",   # ✅ Correct latest supported model
-        temperature=0.6,
-        max_output_tokens=512,
-        google_api_key=os.getenv("GEMINI_API_KEY")
-    )
-    print("✅ Gemini ready!\n")
-
-else:
-    print("❌ Invalid choice. Exiting...")
-    exit()
-
-# -------------------------------
-# Query Loop
-# -------------------------------
-while True:
-    query = input("\n🔍 Enter your query (or type 'exit' to quit): ").strip()
-    if query.lower() == "exit":
-        print("👋 Exiting retrieval pipeline.")
-        break
-
-    # -------------------------------
-    # Optional Image Input
-    # -------------------------------
-    image_path = input("🖼️  (Optional) Enter image path or press Enter to skip: ").strip()
-    retrieved_image_paths = []
-    retrieved_text_chunks = []
-
-    print("🧠 Searching for relevant chunks...")
+# ------------------------------------------------------
+# Function: Retrieve relevant chunks
+# ------------------------------------------------------
+def retrieve_chunks(query):
+    """Search FAISS for most relevant text/image chunks"""
+    print("🔎 Retrieving relevant chunks...")
     results = vector_store.similarity_search(query, k=4)
-    retrieved_text_chunks = [doc.page_content for doc in results]
 
-    # Collect any images from metadata
-    for doc in results:
-        if "image_path" in doc.metadata:
-            retrieved_image_paths.append(doc.metadata["image_path"])
+    retrieved_texts = [doc.page_content for doc in results]
+    retrieved_images = [
+        doc.metadata.get("image_path")
+        for doc in results
+        if isinstance(doc.metadata, dict) and "image_path" in doc.metadata
+    ]
 
-    print(f"📄 Found {len(retrieved_text_chunks)} text chunks and {len(retrieved_image_paths)} images.")
+    print(f"📄 Retrieved {len(retrieved_texts)} text chunks, 🖼️ {len(retrieved_images)} image references.\n")
+    return retrieved_texts, retrieved_images
 
-    # -------------------------------
-    # TinyLlama Response
-    # -------------------------------
-    if choice == "1":
-        context = "\n\n".join(retrieved_text_chunks)
-        prompt = f"""
-        You are a helpful assistant that answers ONLY the user's question.
-        Ignore any 'Question:' or 'Answer:' text in the context — they are just examples.
+# ------------------------------------------------------
+# Function: Build Gemini multimodal message
+# ------------------------------------------------------
+def build_message(query, retrieved_texts, image_paths):
+    """Prepare messages for Gemini model"""
+    context = "\n\n".join(retrieved_texts) if retrieved_texts else "No relevant context found."
 
-        Context:
-        {context}
+    content = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "You are a helpful AI assistant. Use the context below to answer the question.\n\n"
+                        "If the context doesn't have enough information, say 'I don’t know'.\n\n"
+                        f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:"
+                    ),
+                }
+            ],
+        }
+    ]
 
-        User's question: {query}
-
-        Your answer (concise, clear, and single paragraph):
-        """
-        print("💬 Generating response...\n")
-        output = llm.invoke(prompt)
-        print("🧩 Answer:", output, "\n" + "-" * 80)
-
-    # -------------------------------
-    # Gemini Multimodal Response
-    # -------------------------------
-    elif choice == "2":
-        print("\n🚀 Loading Gemini 2.5 Flash (multimodal)...")
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0.6,
-            max_output_tokens=512,
-            google_api_key=os.getenv("GEMINI_API_KEY")
-        )
-        print("✅ Gemini ready!\n")
-
-    else:
-        print("❌ Invalid choice. Exiting...")
-        exit()
-
-    # -------------------------------
-    # Query Function
-    # -------------------------------
-    def retrieval_query(query, image_path=None):
-        print("🧠 Searching for relevant chunks...")
-        results = vector_store.similarity_search(query, k=4)
-        retrieved_text_chunks = [doc.page_content for doc in results]
-
-        # Extract any linked images from metadata
-        retrieved_image_paths = [
-            doc.metadata.get("image_path") for doc in results
-            if isinstance(doc.metadata, dict) and "image_path" in doc.metadata
-        ]
-
-        print(f"📄 Found {len(retrieved_text_chunks)} text chunks and {len(retrieved_image_paths)} images.")
-        return retrieved_text_chunks, retrieved_image_paths
-
-    # -------------------------------
-    # Multimodal Query Builder (Gemini)
-    # -------------------------------
-    def build_gemini_message(query, retrieved_text_chunks, all_image_paths):
-        # Construct text portion
-        context_text = "\n\n".join(retrieved_text_chunks)
-        base_content = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": (
-                        "You are a helpful assistant that answers questions using the given context. "
-                        "If the context does not contain the answer, respond with 'I don't know'.\n\n"
-                        f"Context:\n{context_text}\n\nQuestion: {query}\n\nAnswer clearly and concisely:"
-                    )}
-                ]
-            }
-        ]
-
-        # Add images if present
-        for img_path in all_image_paths:
+    # Attach images as base64 (if any)
+    for img_path in image_paths:
+        if img_path and os.path.exists(img_path):
             try:
-                with open(img_path, "rb") as img_file:
-                    img_bytes = img_file.read()
-                base_content[0]["content"].append({
+                with open(img_path, "rb") as f:
+                    img_data = base64.b64encode(f.read()).decode()
+                content[0]["content"].append({
                     "type": "image_url",
-                    "image_url": f"data:image/jpeg;base64,{base64.b64encode(img_bytes).decode()}"
+                    "image_url": f"data:image/jpeg;base64,{img_data}"
                 })
             except Exception as e:
                 print(f"⚠️ Could not attach image {img_path}: {e}")
 
-        return base_content
+    return content
 
-    # -------------------------------
-    # Query Loop
-    # -------------------------------
+# ------------------------------------------------------
+# Main Query Loop
+# ------------------------------------------------------
+if __name__ == "__main__":
+    print("🤖 Gemini Retrieval-Augmented QA System Ready!\n")
+
     while True:
-        query = input("\n🔍 Enter your query (or type 'exit' to quit): ").strip()
+        query = input("💬 Enter your query (or type 'exit' to quit): ").strip()
         if query.lower() == "exit":
-            print("👋 Exiting retrieval pipeline.")
+            print("👋 Exiting Gemini Retrieval Pipeline.")
             break
 
-        image_path = input("🖼️  (Optional) Enter image path or press Enter to skip: ").strip()
-        retrieved_text_chunks, retrieved_image_paths = retrieval_query(query, image_path)
+        image_input = input("🖼️  (Optional) Enter image path or press Enter to skip: ").strip()
 
-        # -------------------------------
-        # Text-Only Model
-        # -------------------------------
-        if choice == "1":
-            context = "\n\n".join(retrieved_text_chunks)
-            prompt = f"""
-            You are a helpful assistant that answers ONLY the user's question.
-            Ignore any 'Question:' or 'Answer:' text in the context — they are just examples.
+        # Retrieve context
+        retrieved_texts, retrieved_images = retrieve_chunks(query)
 
-            Context:
-            {context}
+        # Combine input image + retrieved images
+        all_images = []
+        if image_input and os.path.exists(image_input):
+            all_images.append(image_input)
+        all_images.extend(retrieved_images)
 
-            User's question: {query}
+        # Build and send to Gemini
+        messages = build_message(query, retrieved_texts, all_images)
 
-            Your answer (concise, clear, and single paragraph):
-            """
-            print("💬 Generating response...\n")
-            output = llm(prompt)
-            print("🧩 Answer:", output, "\n" + "-" * 80)
+        try:
+            print("🤔 Generating response from Gemini...\n")
+            response = llm.invoke(messages)
+            print("🧠 Gemini Response:\n")
+            print(response.content)
+        except Exception as e:
+            print(f"❌ Error during Gemini call: {e}")
 
-        # -------------------------------
-        # Multimodal Model (Gemini)
-        # -------------------------------
-        elif choice == "2":
-            all_image_paths = []
-            if image_path and os.path.exists(image_path):
-                all_image_paths.append(image_path)
-            all_image_paths.extend(retrieved_image_paths)
-
-            messages = build_gemini_message(query, retrieved_text_chunks, all_image_paths)
-
-            try:
-                print(f"🖼️ Sending {len(all_image_paths)} images and {len(retrieved_text_chunks)} text chunks to Gemini...")
-                response = llm.invoke(messages)
-                print("\n🤖 Gemini Response:")
-                print(response.content)
-            except Exception as e:
-                print(f"❌ Error while calling Gemini: {e}")
-
-            print("-" * 80)
+        print("\n" + "-" * 80 + "\n")

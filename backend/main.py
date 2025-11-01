@@ -6,47 +6,46 @@ import shutil
 import base64
 from dotenv import load_dotenv
 from langchain_community.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 
-from backend.upload_pipeline import process_uploaded_file, save_vector_store, VECTOR_STORE_PATH, embed_text
+from backend.upload_pipeline import process_uploaded_file, save_vector_store, VECTOR_STORE_PATH
 
 # ------------------------
 # Initialization
 # ------------------------
 load_dotenv()
-app = FastAPI(title="Multimodal RAG System")
+app = FastAPI(title="Multimodal RAG System (Gemini Only)")
 
 # ------------------------
-# Embedding Wrapper
+# Gemini Embedding Model
 # ------------------------
-class CLIPTextEmbeddings:
-    def embed_query(self, text): return embed_text(text)
-    def embed_documents(self, texts): return [embed_text(t) for t in texts]
-    def __call__(self, text): return embed_text(text)
+GOOGLE_API_KEY = os.getenv("GEMINI_API_KEY")
 
-clip_embedder = CLIPTextEmbeddings()
+if not GOOGLE_API_KEY:
+    raise ValueError("❌ GEMINI_API_KEY not found in .env file")
+
+embedding_model = GoogleGenerativeAIEmbeddings(
+    model="models/embedding-001",
+    google_api_key=GOOGLE_API_KEY
+)
 
 # ------------------------
-# Load Vector Store
+# Vector Store Loader
 # ------------------------
-if not os.path.exists(VECTOR_STORE_PATH):
-    os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
-
 def load_vector_store():
-    if os.listdir(VECTOR_STORE_PATH):
-        return FAISS.load_local(VECTOR_STORE_PATH, embeddings=clip_embedder, allow_dangerous_deserialization=True)
-    else:
-        return None
+    if os.path.exists(VECTOR_STORE_PATH) and os.listdir(VECTOR_STORE_PATH):
+        return FAISS.load_local(VECTOR_STORE_PATH, embeddings=embedding_model, allow_dangerous_deserialization=True)
+    return None
 
 # ------------------------
 # Gemini Model Loader
 # ------------------------
 def load_gemini():
     return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",  # ✅ latest stable model
+        model="gemini-2.5-flash",  # ✅ latest stable multimodal model
         temperature=0.6,
         max_output_tokens=512,
-        google_api_key=os.getenv("GEMINI_API_KEY")
+        google_api_key=GOOGLE_API_KEY
     )
 
 # ------------------------
@@ -87,11 +86,11 @@ async def query_documents(
     retrieved_docs = [doc for doc, _ in results_with_scores]
     scores = [float(score) for _, score in results_with_scores]
 
-    # --- Prepare Combined Context ---
+    # --- Build Context ---
     context_text = "\n\n".join([doc.page_content for doc in retrieved_docs])
     prompt = f"""
-You are a helpful assistant that answers based on the context below by understanding the context in the detailed way.
-If the context does not at all contain anything related to question, reply "I don't know".
+You are a helpful AI assistant that answers questions using the provided context.
+If the context does not contain the answer, respond with "I don't know".
 
 Context:
 {context_text}
@@ -104,7 +103,7 @@ Answer concisely and clearly:
     # --- Load Gemini ---
     llm = load_gemini()
 
-    # --- Handle optional image input ---
+    # --- Prepare message (with optional image) ---
     message_content = [{"type": "text", "text": prompt}]
     if image:
         img_bytes = await image.read()
@@ -142,5 +141,5 @@ Answer concisely and clearly:
 # ------------------------
 @app.get("/")
 def root():
-    return {"message": "API is running successfully on Render with Gemini!"}
+    return {"message": "✅ Gemini-only Multimodal RAG API is running successfully on Render!"}
 

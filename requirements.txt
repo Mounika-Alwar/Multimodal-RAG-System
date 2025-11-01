@@ -1,22 +1,32 @@
-fastapi
-uvicorn
-langchain
-langchain-core
-langchain-community
-langchain-huggingface
-langchain-text-splitters
-langchain-google-genai
-faiss-cpu
-pydantic
-pandas
-numpy
-torch
-transformers
-sentence-transformers
-google-generativeai
-python-multipart
-Pillow
-pdfplumber
-PyMuPDF
-python-dotenv
-langchain_core.pydantic_v1
+# -------- Core Framework --------
+fastapi==0.115.0
+uvicorn==0.30.1
+python-multipart==0.0.9
+
+# -------- Environment Handling --------
+python-dotenv==1.0.1
+
+# -------- LangChain Ecosystem --------
+langchain==0.2.14
+langchain-core==0.2.43
+langchain-community==0.2.12
+langchain-google-genai==1.0.7
+
+# -------- Vector Store --------
+faiss-cpu==1.8.0.post1
+
+# -------- Google Gemini (Chat + Embeddings) --------
+google-generativeai==0.7.2
+
+# -------- Document & Image Handling --------
+PyMuPDF==1.24.10      # for PDF text + image extraction
+Pillow==10.4.0         # for image processing
+numpy==1.26.4
+
+# -------- Optional Utilities --------
+tqdm==4.66.5           # progress bars if you want to show processing progress
+requests==2.32.3       # safer HTTP utils if you later call Gemini APIs directly
+
+# -------- Deployment (Render / Cloud) --------
+gunicorn==21.2.0       # for production server on Render/Heroku etc.
+
