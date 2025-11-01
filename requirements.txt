@@ -14,4 +14,4 @@ Pillow
 pdfplumber
 PyMuPDF
 python-dotenv
-
+transformers
