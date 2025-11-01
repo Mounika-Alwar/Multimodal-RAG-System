@@ -4,6 +4,7 @@ langchain
 langchain-core
 langchain-community
 langchain-huggingface
+langchain-text-splitters
 langchain-google-genai
 faiss-cpu
 pydantic
