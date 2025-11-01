@@ -10,6 +10,7 @@ langchain-community
 langchain-huggingface
 langchain-text-splitters
 langchain-google-genai
+langchain-core.pydantic_v1
 
 faiss-cpu
 sentence-transformers
