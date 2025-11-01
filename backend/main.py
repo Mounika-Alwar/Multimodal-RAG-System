@@ -168,3 +168,8 @@ Answer concisely and clearly:
         ],
         "final_answer": answer.strip()
     })
+
+
+@app.get("/")
+def root():
+    return {"message": "API is running successfully!"}
