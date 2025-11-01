@@ -121,9 +121,16 @@ def clear_data():
     return {"status": "✅ Cleared uploaded_files and vector_store successfully"}
 
 
+# ------------------------
+# Root Endpoint
+# ------------------------
 @app.get("/")
-def root():
-    return {"message": "✅ RAG API running with open-source embeddings + Gemini LLM!"}
+def read_root():
+    return {"status": "App is running successfully!"}
 
-
-
+# ------------------------
+# App Entry Point (for Render)
+# ------------------------
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
