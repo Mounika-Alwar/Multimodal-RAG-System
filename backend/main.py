@@ -5,7 +5,7 @@ import os
 import shutil
 import base64
 import numpy as np
-from upload_pipeline import process_uploaded_file, save_vector_store, VECTOR_STORE_PATH, embed_text
+from backend.upload_pipeline import process_uploaded_file, save_vector_store, VECTOR_STORE_PATH, embed_text
 from langchain_community.vectorstores import FAISS
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFacePipeline
