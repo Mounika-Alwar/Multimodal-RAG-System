@@ -169,6 +169,15 @@ Answer concisely and clearly:
         "final_answer": answer.strip()
     })
 
+@app.delete("/reset-faiss/")
+def reset_vector_store():
+    if os.path.exists(VECTOR_STORE_PATH):
+        shutil.rmtree(VECTOR_STORE_PATH)
+        os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
+        return {"status": "success", "message": "FAISS memory cleared."}
+    else:
+        return {"status": "no_vector_store_found"}
+
 
 @app.get("/")
 def root():
