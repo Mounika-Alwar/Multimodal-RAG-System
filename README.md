@@ -21,7 +21,7 @@ It builds a pipeline to extract meaningful content, convert it into embeddings, 
 - The upload endpoint accepts text, image and PDF files.  
 - Text from PDFs is extracted using PyMuPDF.  
 - Images are processed via a captioning model (BLIP) to generate descriptive text.  
-- All output content (original or generated) is chunked and embedded.
+- All output content (original or generated) is chunked and embedded using CLIP
 
 ### 2. Embedding & Storage  
 - Text (from documents and captions) is embedded using a text-embedding model.  
