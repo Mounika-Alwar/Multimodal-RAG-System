@@ -155,4 +155,4 @@ def save_vector_store():
         metadatas=[doc.metadata for doc in all_docs],
     )
     vector_store.save_local(VECTOR_STORE_PATH)
-    print(f"✅ Saved vector store to {VECTOR_STORE_PATH
+    print(f"✅ Saved vector store to {VECTOR_STORE_PATH}")
